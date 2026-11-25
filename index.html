@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radicle Tracer</title>
+<style>
+  :root{
+    --bg:#f6f5f1; --panel:#ffffff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e2e0d8;
+    --accent:#2f6f4f; --accent-soft:#e3efe8; --warn:#b5651d; --bad:#b3261e; --cal:#2b5fb3;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+  .app{display:grid;grid-template-columns:240px 1fr 320px;height:100vh}
+  aside,.right{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:14px}
+  .right{border-right:0;border-left:1px solid var(--line)}
+  h1{font-size:16px;margin:0 0 4px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px}
+  .sub{color:var(--muted);font-size:12px}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:7px;padding:6px 10px;font:inherit;cursor:pointer}
+  .btn:hover{border-color:#c9c6bb}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .btn.small{padding:3px 8px;font-size:12px}
+  .file-drop{display:block;border:1.5px dashed #c9c6bb;border-radius:9px;padding:14px;text-align:center;color:var(--muted);margin-top:10px;cursor:pointer}
+  .file-drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .imglist{list-style:none;margin:0;padding:0}
+  .imglist li{padding:7px 8px;border-radius:7px;cursor:pointer;display:flex;justify-content:space-between;gap:6px;align-items:center}
+  .imglist li:hover{background:#f1efe9}
+  .imglist li.active{background:var(--accent-soft)}
+  .pill{font-size:11px;padding:1px 7px;border-radius:99px;background:#eee;color:var(--muted);white-space:nowrap}
+  .pill.done{background:var(--accent-soft);color:var(--accent)}
+  .pill.part{background:#fbeedd;color:var(--warn)}
+  main{position:relative;overflow:hidden;background:#2a2926}
+  canvas{display:block;width:100%;height:100%;cursor:crosshair}
+  .hud{position:absolute;left:12px;top:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+  .hud>*{pointer-events:auto}
+  .chip{background:rgba(255,255,255,.94);border-radius:8px;padding:6px 10px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cfcac0;text-align:center;padding:40px}
+  .seedgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .seed{border:1px solid var(--line);border-radius:7px;padding:5px 0 4px;text-align:center;cursor:pointer;background:#fff;font-size:12px}
+  .seed b{display:block;font-size:13px}
+  .seed.cur{outline:2px solid var(--accent);outline-offset:1px}
+  .seed.g{background:#e3efe8}
+  .seed.s{background:#fbeedd}
+  .seed.n{background:#f0efeb;color:var(--muted)}
+  .seed.u{box-shadow:inset 0 0 0 2px var(--bad)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:4px 5px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}
+  input[type=number],input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;width:80px}
+  input[type=text]{width:100%}
+  .keys{font-size:12px;color:var(--muted);line-height:1.7}
+  kbd{background:#f1efe9;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:11px;font-family:inherit}
+  .warn{color:var(--warn);font-size:12px}
+  .bad{color:var(--bad)}
+  .stat{display:flex;justify-content:space-between;padding:3px 0}
+  .stat span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1d1d1b;color:#fff;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  textarea{width:100%;height:120px;font:11px/1.3 ui-monospace,Menlo,monospace;border:1px solid var(--line);border-radius:6px;padding:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Radicle Tracer</h1>
+    <div class="sub">Calibrate on the ruler, trace each radicle from the seed coat to the tip, and read off the germination % per dish.</div>
+    <label class="file-drop" id="drop">
+      <input type="file" id="files" accept="image/*" multiple hidden>
+      <b>Open images</b><br>or drop them here<br><span style="font-size:11px">Name them like <code>A1_T72h.jpg</code></span>
+    </label>
+    <div class="row" style="margin-top:8px">
+      <button class="btn small" id="clearlist">Clear image list</button>
+      <button class="btn small" id="forget">Delete saved traces…</button>
+    </div>
+    <div class="sub" id="forgetnote" style="display:none"></div>
+    <h2>Images</h2>
+    <ul class="imglist" id="imglist"><li class="sub" style="cursor:default">No images loaded yet.</li></ul>
+    <h2>Settings</h2>
+    <div class="row">Seeds per dish <input type="number" id="nseeds" value="10" min="1" max="50"></div>
+    <div class="row">Germination cutoff (mm) <input type="number" id="cutoff" value="2" step="0.1" min="0"></div>
+    <h2>Keys</h2>
+    <div class="keys">
+      <kbd>Click</kbd> add point &nbsp; <kbd>Drag</kbd> pan<br>
+      <kbd>Scroll</kbd> zoom &nbsp; <kbd>F</kbd> fit image<br>
+      <kbd>Enter</kbd> finish seed → next<br>
+      <kbd>Backspace</kbd> undo point<br>
+      <kbd>0</kbd> no radicle → next<br>
+      <kbd>U</kbd> flag uncertain<br>
+      <kbd>C</kbd> calibrate &nbsp; <kbd>T</kbd> trace<br>
+      <kbd>1</kbd>–<kbd>9</kbd> jump to seed
+    </div>
+  </aside>
+
+  <main id="main">
+    <canvas id="cv"></canvas>
+    <div class="hud" id="hud" style="display:none">
+      <div class="chip" id="modechip"></div>
+      <div class="chip" id="zoomchip"></div>
+    </div>
+    <div class="empty" id="empty">Open your dish images to start.<br><br>Images stay on your computer. Nothing is uploaded.</div>
+  </main>
+
+  <div class="right">
+    <div id="curpanel" style="display:none">
+      <h1 id="curname"></h1>
+      <div class="sub" id="curmeta"></div>
+
+      <h2>1 · Calibrate</h2>
+      <div class="row">
+        <button class="btn small" id="calbtn">Click 2 ruler marks</button>
+        <input type="number" id="calmm" value="80" step="0.5"> mm apart
+      </div>
+      <div class="sub" id="calinfo">Not calibrated.</div>
+      <div class="row">
+        <button class="btn small" id="calcopy">Use this calibration for uncalibrated images</button>
+      </div>
+
+      <h2>2 · Trace seeds</h2>
+      <div class="seedgrid" id="seedgrid"></div>
+      <div style="margin-top:10px" id="seeddetail"></div>
+
+      <h2>Dish result</h2>
+      <div id="dishsum"></div>
+    </div>
+
+    <h2>All dishes</h2>
+    <div id="alltable" class="sub">Results appear here once seeds are scored.</div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn small primary" id="dlseed">Download per-seed CSV</button>
+      <button class="btn small" id="dlsum">Download summary CSV</button>
+    </div>
+    <div class="row">
+      <button class="btn small" id="copyseed">Copy per-seed CSV</button>
+      <button class="btn small" id="copysum">Copy summary CSV</button>
+    </div>
+    <div class="sub">The per-seed CSV is the input for <code>analysis/germination_analysis.py</code>.</div>
+    <h2>Backup</h2>
+    <div class="row">
+      <button class="btn small" id="savesess">Save session file</button>
+      <label class="btn small">Open session file<input type="file" id="sessfile" accept=".json,application/json" hidden></label>
+    </div>
+    <div class="row">
+      <button class="btn small" id="copysess">Copy session</button>
+      <button class="btn small" id="loadsess">Paste session…</button>
+    </div>
+    <div class="sub">A session holds the calibration and traces for each image. Open the same images first, then the session.</div>
+    <div class="sub" style="margin-top:14px">Radicle Tracer v1.0 · runs entirely in your browser</div>
+    <textarea id="sessbox" style="display:none" placeholder="Paste a copied session here, then click Load session again"></textarea>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const S = { imgs: [], cur: -1, mode: 'trace', seed: 0, view: {s:1, ox:0, oy:0} };
+let calPts = [];
+
+// ---------- storage (best effort) ----------
+const KEY = 'radicle-tracer-v1';
+function loadStore(){ try { return JSON.parse(localStorage.getItem(KEY)||'{}'); } catch(e){ return {}; } }
+function saveStore(){
+  try {
+    const st = loadStore();
+    S.imgs.forEach(im => st[im.key] = {calib: im.calib, seeds: im.seeds});
+    localStorage.setItem(KEY, JSON.stringify(st));
+  } catch(e){}
+}
+
+// ---------- helpers ----------
+const nSeeds = () => Math.max(1, parseInt($('nseeds').value)||10);
+const cutoff = () => parseFloat($('cutoff').value)||0;
+function parseName(n){
+  const base = n.replace(/\.[^.]+$/,'');
+  const m = base.match(/^(.+?)[_\- ]+(T?\d+(?:\.\d+)?\s*h?)$/i);
+  return m ? {dish:m[1], time:m[2]} : {dish:base, time:''};
+}
+function blankSeed(){ return {pts:[], status:null, uncertain:false, note:''}; }
+function ensureSeeds(im){ while(im.seeds.length < nSeeds()) im.seeds.push(blankSeed()); }
+function polyLen(p){ let L=0; for(let i=1;i<p.length;i++) L+=Math.hypot(p[i][0]-p[i-1][0], p[i][1]-p[i-1][1]); return L; }
+function seedMM(im, sd){ if(!im.calib || sd.status!=='traced' || sd.pts.length<2) return null; return polyLen(sd.pts)/im.calib.pxPerMm; }
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>e.classList.remove('show'),1600); }
+const fmt = (x,d=2) => x==null||isNaN(x) ? '' : x.toFixed(d);
+
+// ---------- loading ----------
+async function addFiles(list){
+  const st = loadStore();
+  const files = [...list].filter(f => f.type.startsWith('image/'));
+  for (const f of files){
+    const key = f.name + '|' + f.size;
+    if (S.imgs.some(i => i.key===key)) continue;
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=url; }).catch(()=>null);
+    if (!img.naturalWidth) { toast('Could not open ' + f.name); continue; }
+    const saved = st[key] || {};
+    const p = parseName(f.name);
+    const im = { key, name:f.name, dish:p.dish, time:p.time, img, calib: saved.calib||null, seeds: saved.seeds||[] };
+    ensureSeeds(im);
+    S.imgs.push(im);
+  }
+  S.imgs.sort((a,b)=> a.name.localeCompare(b.name, undefined, {numeric:true}));
+  if (S.cur < 0 && S.imgs.length) select(0); else renderAll();
+}
+$('files').addEventListener('change', e => addFiles(e.target.files));
+const drop = $('drop');
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+$('main').addEventListener('dragover', e => e.preventDefault());
+$('main').addEventListener('drop', e => { e.preventDefault(); addFiles(e.dataTransfer.files); });
+
+function select(i){
+  S.cur = i; calPts = [];
+  const im = S.imgs[i]; ensureSeeds(im);
+  S.mode = im.calib ? 'trace' : 'calib';
+  S.seed = Math.max(0, im.seeds.findIndex(s => s.status===null)); if (S.seed<0) S.seed=0;
+  fit(); renderAll();
+}
+
+// ---------- view ----------
+function resize(){ const r = cv.getBoundingClientRect(); const d = devicePixelRatio||1; cv.width = r.width*d; cv.height = r.height*d; draw(); }
+window.addEventListener('resize', resize);
+function fit(){
+  const im = S.imgs[S.cur]; if(!im) return;
+  const r = cv.getBoundingClientRect();
+  const s = Math.min(r.width/im.img.naturalWidth, r.height/im.img.naturalHeight)*0.96;
+  S.view = { s, ox:(r.width - im.img.naturalWidth*s)/2, oy:(r.height - im.img.naturalHeight*s)/2 };
+  draw();
+}
+const toImg = (x,y) => [(x - S.view.ox)/S.view.s, (y - S.view.oy)/S.view.s];
+
+let drag = null;
+cv.addEventListener('mousedown', e => { drag = {x:e.clientX, y:e.clientY, ox:S.view.ox, oy:S.view.oy, moved:false}; });
+window.addEventListener('mousemove', e => {
+  if (drag){
+    const dx = e.clientX-drag.x, dy = e.clientY-drag.y;
+    if (Math.hypot(dx,dy) > 4) drag.moved = true;
+    if (drag.moved){ S.view.ox = drag.ox+dx; S.view.oy = drag.oy+dy; draw(); }
+  }
+  S.mouse = e.target===cv ? [e.offsetX, e.offsetY] : null;
+  if (!drag && S.mode && S.cur>=0) draw();
+});
+window.addEventListener('mouseup', e => {
+  if (drag && !drag.moved && e.target===cv) clickAt(e.offsetX, e.offsetY);
+  drag = null;
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const k = Math.exp(-e.deltaY*0.0015);
+  const s2 = Math.min(Math.max(S.view.s*k, 0.02), 20);
+  const [ix,iy] = toImg(e.offsetX, e.offsetY);
+  S.view.s = s2; S.view.ox = e.offsetX - ix*s2; S.view.oy = e.offsetY - iy*s2;
+  draw();
+}, {passive:false});
+
+function clickAt(x,y){
+  const im = S.imgs[S.cur]; if(!im) return;
+  const p = toImg(x,y);
+  if (S.mode==='calib'){
+    calPts.push(p);
+    if (calPts.length===2){
+      const mm = parseFloat($('calmm').value);
+      const px = Math.hypot(calPts[1][0]-calPts[0][0], calPts[1][1]-calPts[0][1]);
+      if (!(mm>0) || px<5){ toast('Enter a distance in mm first'); calPts=[]; draw(); return; }
+      im.calib = { p1:calPts[0], p2:calPts[1], mm, pxPerMm: px/mm };
+      calPts = []; S.mode='trace'; saveStore(); toast(`Calibrated: ${im.calib.pxPerMm.toFixed(2)} px/mm`);
+    }
+  } else {
+    const sd = im.seeds[S.seed];
+    if (sd.status==='none') sd.pts = [];
+    sd.status = 'traced'; sd.pts.push(p); saveStore();
+  }
+  renderAll();
+}
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', e => {
+  if (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA') return;
+  const im = S.imgs[S.cur]; if(!im) return;
+  const sd = im.seeds[S.seed];
+  if (e.key==='Enter'){ nextSeed(); }
+  else if (e.key==='Backspace'){ e.preventDefault();
+    if (S.mode==='calib'){ calPts.pop(); }
+    else { sd.pts.pop(); if (!sd.pts.length && sd.status==='traced') sd.status=null; saveStore(); } }
+  else if (e.key==='0'){ sd.status='none'; sd.pts=[]; saveStore(); nextSeed(); }
+  else if (e.key==='u'||e.key==='U'){ sd.uncertain=!sd.uncertain; saveStore(); }
+  else if (e.key==='f'||e.key==='F'){ fit(); }
+  else if (e.key==='c'||e.key==='C'){ S.mode='calib'; calPts=[]; }
+  else if (e.key==='t'||e.key==='T'){ S.mode='trace'; }
+  else if (/^[1-9]$/.test(e.key)){ const n=+e.key-1; if(n<nSeeds()){ S.seed=n; S.mode='trace'; } }
+  else return;
+  renderAll();
+});
+function nextSeed(){
+  const im = S.imgs[S.cur];
+  const sd = im.seeds[S.seed];
+  if (sd.status==='traced' && sd.pts.length<2){ toast('A trace needs at least 2 points'); return; }
+  if (S.seed < nSeeds()-1) S.seed++;
+  else { toast('All seeds in this dish are done'); }
+  S.mode='trace';
+}
+
+// ---------- drawing ----------
+function draw(){
+  const d = devicePixelRatio||1;
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
+  const im = S.imgs[S.cur]; if(!im) return;
+  ctx.setTransform(d*S.view.s,0,0,d*S.view.s,d*S.view.ox,d*S.view.oy);
+  ctx.imageSmoothingEnabled = S.view.s < 2;
+  ctx.drawImage(im.img,0,0);
+  const lw = 2.2/S.view.s;
+  // calibration
+  const cps = im.calib && S.mode!=='calib' ? [im.calib.p1, im.calib.p2] : calPts;
+  if (cps.length){
+    ctx.strokeStyle='#4f8cff'; ctx.fillStyle='#4f8cff'; ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.moveTo(...cps[0]);
+    if (cps[1]) ctx.lineTo(...cps[1]); else if (S.mouse && S.mode==='calib') ctx.lineTo(...toImg(...S.mouse));
+    ctx.stroke();
+    cps.forEach(p => { ctx.beginPath(); ctx.arc(p[0],p[1],4/S.view.s,0,7); ctx.fill(); });
+  }
+  // seeds
+  const cut = cutoff();
+  im.seeds.slice(0,nSeeds()).forEach((sd,i) => {
+    if (sd.status!=='traced' || !sd.pts.length) return;
+    const mm = seedMM(im, sd);
+    const col = sd.uncertain ? '#ff4d4d' : (mm!=null && mm>cut ? '#3ddc84' : '#ffad42');
+    ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth = (i===S.seed?1.6:1)*lw; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.setLineDash(sd.uncertain?[6/S.view.s,4/S.view.s]:[]);
+    ctx.beginPath(); sd.pts.forEach((p,j)=> j?ctx.lineTo(...p):ctx.moveTo(...p));
+    if (i===S.seed && S.mode==='trace' && S.mouse) ctx.lineTo(...toImg(...S.mouse));
+    ctx.stroke(); ctx.setLineDash([]);
+    sd.pts.forEach((p,j) => { ctx.beginPath(); ctx.arc(p[0],p[1],(j===0?4:2.5)/S.view.s,0,7); ctx.fill(); });
+    const p0 = sd.pts[0], fs = 15/S.view.s;
+    ctx.font = `600 ${fs}px -apple-system,Segoe UI,sans-serif`;
+    const label = `${i+1}${mm!=null?' · '+mm.toFixed(1)+' mm':''}`;
+    const w = ctx.measureText(label).width;
+    ctx.fillStyle='rgba(0,0,0,.65)'; ctx.fillRect(p0[0]+8/S.view.s, p0[1]-fs*1.1, w+8/S.view.s, fs*1.35);
+    ctx.fillStyle=col; ctx.fillText(label, p0[0]+12/S.view.s, p0[1]);
+  });
+  updateHud();
+}
+function updateHud(){
+  const im = S.imgs[S.cur]; if(!im) return;
+  $('hud').style.display='flex';
+  let t;
+  if (S.mode==='calib') t = calPts.length ? 'Calibrate: click the second ruler mark' : 'Calibrate: click the first ruler mark';
+  else {
+    const sd = im.seeds[S.seed];
+    t = `Seed ${S.seed+1}: ` + (sd.status==='traced' && sd.pts.length ? 'keep clicking along the radicle; Enter when you reach the tip' : 'click where the radicle leaves the seed coat (or press 0 if there is none)');
+    if (!im.calib) t += ' · ⚠ not calibrated';
+  }
+  $('modechip').textContent = t;
+  const pxmm = im.calib ? im.calib.pxPerMm : null;
+  $('zoomchip').textContent = `${Math.round(S.view.s*100)}%` + (pxmm ? ` · 1 mm = ${(pxmm*S.view.s).toFixed(1)} screen px` : '');
+}
+
+// ---------- panels ----------
+function dishStats(im){
+  const n = nSeeds(), cut = cutoff();
+  const seeds = im.seeds.slice(0,n);
+  const scored = seeds.filter(s => s.status!==null).length;
+  const lens = seeds.map(s => seedMM(im,s));
+  const germ = lens.filter(x => x!=null && x>cut);
+  const mean = germ.length ? germ.reduce((a,b)=>a+b,0)/germ.length : null;
+  const sd = germ.length>1 ? Math.sqrt(germ.reduce((a,b)=>a+(b-mean)**2,0)/(germ.length-1)) : null;
+  return { n, scored, germ:germ.length, pct: 100*germ.length/n, mean, sd,
+           min: germ.length?Math.min(...germ):null, max: germ.length?Math.max(...germ):null,
+           unc: seeds.filter(s=>s.uncertain).length, calibrated: !!im.calib };
+}
+function renderAll(){
+  // list
+  const L = $('imglist');
+  if (!S.imgs.length){
+    L.innerHTML = '<li class="sub" style="cursor:default">No images loaded yet.</li>';
+    $('empty').style.display='flex'; $('curpanel').style.display='none'; $('hud').style.display='none';
+    $('alltable').innerHTML = 'Results appear here once seeds are scored.';
+    draw(); return;
+  }
+  $('empty').style.display='none';
+  L.innerHTML='';
+  S.imgs.forEach((im,i) => {
+    const st = dishStats(im);
+    const li = document.createElement('li'); if(i===S.cur) li.className='active';
+    const cls = st.scored===st.n && st.calibrated ? 'done' : (st.scored||st.calibrated ? 'part':'');
+    li.innerHTML = `<span>${im.name}</span><span class="pill ${cls}">${st.scored}/${st.n}</span>`;
+    li.onclick = () => select(i);
+    L.appendChild(li);
+  });
+  const im = S.imgs[S.cur];
+  if (im){
+    ensureSeeds(im);
+    $('curpanel').style.display='block';
+    $('curname').textContent = im.name;
+    $('curmeta').textContent = `Dish ${im.dish}${im.time?' · '+im.time:''} · ${im.img.naturalWidth}×${im.img.naturalHeight}px`;
+    $('calbtn').classList.toggle('on', S.mode==='calib');
+    // calibration info + consistency
+    const pxs = S.imgs.filter(x=>x.calib).map(x=>x.calib.pxPerMm).sort((a,b)=>a-b);
+    const med = pxs.length ? pxs[Math.floor(pxs.length/2)] : null;
+    if (im.calib){
+      const dev = med ? 100*(im.calib.pxPerMm-med)/med : 0;
+      $('calinfo').innerHTML = `${im.calib.pxPerMm.toFixed(2)} px/mm (from ${im.calib.mm} mm)` +
+        (pxs.length>2 && Math.abs(dev)>3 ? `<br><span class="warn">Differs ${dev.toFixed(1)}% from the median of the other images. Re-check the clicks.</span>` : '');
+    } else $('calinfo').innerHTML = '<span class="warn">Not calibrated. Lengths will not be calculated.</span>';
+    // seeds
+    const G = $('seedgrid'); G.innerHTML='';
+    const cut = cutoff();
+    im.seeds.slice(0,nSeeds()).forEach((sd,i) => {
+      const mm = seedMM(im,sd);
+      const d = document.createElement('div');
+      let c = 'seed';
+      if (sd.status==='none') c+=' n'; else if (mm!=null) c += mm>cut?' g':' s';
+      if (sd.uncertain) c+=' u'; if (i===S.seed) c+=' cur';
+      d.className=c;
+      d.innerHTML = `<b>${i+1}</b>${sd.status==='none'?'none':mm!=null?mm.toFixed(1):sd.status==='traced'?'…':'–'}`;
+      d.onclick = () => { S.seed=i; S.mode='trace'; renderAll(); };
+      G.appendChild(d);
+    });
+    const sd = im.seeds[S.seed];
+    const mm = seedMM(im,sd);
+    $('seeddetail').innerHTML = `
+      <div class="row"><b>Seed ${S.seed+1}</b>&nbsp;<span class="sub">${sd.status==='none'?'No radicle':sd.status==='traced'?(mm!=null?mm.toFixed(2)+' mm · '+(mm>cut?'germinated':'below cutoff'):sd.pts.length+' point(s)'):'Not scored yet'}</span></div>
+      <div class="row">
+        <button class="btn small" data-a="none">No radicle (0)</button>
+        <button class="btn small ${sd.uncertain?'on':''}" data-a="unc">Uncertain (U)</button>
+        <button class="btn small" data-a="clear">Clear</button>
+        <button class="btn small primary" data-a="next">Next (Enter)</button>
+      </div>
+      <input type="text" id="note" placeholder="Note, e.g. tip hidden under the towel" value="${(sd.note||'').replace(/"/g,'&quot;')}">`;
+    $('seeddetail').querySelectorAll('button').forEach(b => b.onclick = () => {
+      const a=b.dataset.a;
+      if(a==='none'){ sd.status='none'; sd.pts=[]; nextSeed(); }
+      if(a==='unc') sd.uncertain=!sd.uncertain;
+      if(a==='clear'){ sd.status=null; sd.pts=[]; sd.uncertain=false; sd.note=''; }
+      if(a==='next') nextSeed();
+      saveStore(); renderAll();
+    });
+    $('note').oninput = e => { sd.note = e.target.value; saveStore(); };
+    // dish summary
+    const st = dishStats(im);
+    $('dishsum').innerHTML = `
+      <div class="stat"><span>Scored</span><span>${st.scored} / ${st.n}</span></div>
+      <div class="stat"><span>Germinated (&gt; ${cut} mm)</span><span>${st.germ} (${st.pct.toFixed(0)}%)</span></div>
+      <div class="stat"><span>Mean length, germinated</span><span>${st.mean!=null?st.mean.toFixed(2)+' mm':'–'}</span></div>
+      <div class="stat"><span>SD</span><span>${st.sd!=null?st.sd.toFixed(2)+' mm':'–'}</span></div>
+      ${st.unc?`<div class="stat bad"><span>Flagged uncertain</span><span>${st.unc}</span></div>`:''}
+      ${st.scored<st.n?`<div class="warn">${st.n-st.scored} seed(s) not scored yet. % is out of ${st.n}.</div>`:''}`;
+  }
+  // all table
+  const rows = S.imgs.map(x => [x, dishStats(x)]);
+  $('alltable').innerHTML = `<table><tr><th>Dish</th><th>Time</th><th class="num">Germ %</th><th class="num">Mean mm</th><th class="num">Unc.</th></tr>` +
+    rows.map(([x,st]) => `<tr><td>${x.dish}</td><td>${x.time}</td><td class="num">${st.scored?st.pct.toFixed(0):'–'}</td><td class="num">${fmt(st.mean)}</td><td class="num ${st.unc?'bad':''}">${st.unc||''}</td></tr>`).join('') + `</table>`;
+  draw();
+}
+$('nseeds').oninput = renderAll; $('cutoff').oninput = renderAll;
+$('calmm').oninput = () => {
+  const im = S.imgs[S.cur]; const mm = parseFloat($('calmm').value);
+  if (im && im.calib && !im.calib.copiedFrom && mm>0){
+    const px = Math.hypot(im.calib.p2[0]-im.calib.p1[0], im.calib.p2[1]-im.calib.p1[1]);
+    im.calib.mm = mm; im.calib.pxPerMm = px/mm; saveStore(); renderAll();
+  }
+};
+$('calbtn').onclick = () => { S.mode = S.mode==='calib'?'trace':'calib'; calPts=[]; renderAll(); };
+$('calcopy').onclick = () => {
+  const im = S.imgs[S.cur]; if(!im||!im.calib) return toast('Calibrate this image first');
+  let n=0; S.imgs.forEach(x => { if(!x.calib){ x.calib = {...im.calib, copiedFrom: im.name}; n++; } });
+  saveStore(); renderAll(); toast(`Calibration applied to ${n} image(s)`);
+};
+
+// ---------- export ----------
+function csvSummary(){
+  const h = ['image','dish','time','seeds','scored','germinated','germination_pct','mean_length_mm','sd_mm','min_mm','max_mm','n_uncertain','px_per_mm','calibration_source'];
+  const r = S.imgs.map(x => { const s=dishStats(x); return [x.name,x.dish,x.time,s.n,s.scored,s.germ,s.pct.toFixed(1),fmt(s.mean),fmt(s.sd),fmt(s.min),fmt(s.max),s.unc,x.calib?x.calib.pxPerMm.toFixed(3):'',x.calib?(x.calib.copiedFrom||'own ruler'):'']; });
+  return [h,...r].map(a=>a.map(q).join(',')).join('\n');
+}
+function csvSeeds(){
+  const cut = cutoff();
+  const h = ['image','dish','time','seed','status','length_mm','germinated','uncertain','n_points','note'];
+  const r = [];
+  S.imgs.forEach(x => x.seeds.slice(0,nSeeds()).forEach((sd,i) => {
+    const mm = seedMM(x,sd);
+    r.push([x.name,x.dish,x.time,i+1,sd.status||'unscored',fmt(mm),mm!=null&&mm>cut?'yes':'no',sd.uncertain?'yes':'no',sd.pts.length,sd.note||'']);
+  }));
+  return [h,...r].map(a=>a.map(q).join(',')).join('\n');
+}
+const q = v => { v = String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
+async function copy(text, what){
+  try { await navigator.clipboard.writeText(text); toast(what+' copied'); }
+  catch(e){ const b=$('sessbox'); b.style.display='block'; b.value=text; b.select(); toast('Copy blocked. Text shown below; copy it manually'); }
+}
+$('copysum').onclick = () => copy(csvSummary(),'Summary CSV');
+$('copyseed').onclick = () => copy(csvSeeds(),'Per-seed CSV');
+function download(text, name, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
+const sessionJSON = () => JSON.stringify(S.imgs.map(x=>({key:x.key,calib:x.calib,seeds:x.seeds})));
+function applySession(arr){
+  let n=0;
+  arr.forEach(r => { const im = S.imgs.find(x=>x.key===r.key); if(im){ im.calib=r.calib; im.seeds=r.seeds; ensureSeeds(im); n++; } });
+  saveStore(); renderAll(); toast(`Loaded ${n} image(s). Open the images first if this is 0`);
+}
+$('dlseed').onclick = () => { if(!S.imgs.length) return toast('No images loaded'); download(csvSeeds(), `radicle_seeds_${stamp()}.csv`, 'text/csv'); };
+$('dlsum').onclick = () => { if(!S.imgs.length) return toast('No images loaded'); download(csvSummary(), `radicle_summary_${stamp()}.csv`, 'text/csv'); };
+$('savesess').onclick = () => { if(!S.imgs.length) return toast('No images loaded'); download(sessionJSON(), `radicle_session_${stamp()}.json`, 'application/json'); };
+$('sessfile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try { applySession(JSON.parse(await f.text())); } catch(err){ toast('That is not a valid session file'); }
+  e.target.value = '';
+};
+$('copysess').onclick = () => copy(sessionJSON(),'Session');
+$('loadsess').onclick = () => {
+  const b=$('sessbox');
+  if (b.style.display==='none' || !b.value.trim().startsWith('[')){ b.style.display='block'; b.value=''; b.focus(); toast('Paste a session, then click Load again'); return; }
+  try {
+    applySession(JSON.parse(b.value)); b.style.display='none';
+  } catch(e){ toast('That is not a valid session'); }
+};
+
+$('clearlist').onclick = () => {
+  if (!S.imgs.length) return toast('The list is already empty');
+  saveStore();
+  S.imgs.forEach(im => URL.revokeObjectURL(im.img.src));
+  S.imgs = []; S.cur = -1; calPts = []; $('files').value = '';
+  renderAll(); toast('List cleared. Traces stay saved in this browser');
+};
+let forgetArmed = false;
+$('forget').onclick = () => {
+  const b = $('forget'), note = $('forgetnote');
+  if (!forgetArmed){
+    forgetArmed = true; b.textContent = 'Click again to delete'; b.style.borderColor = 'var(--bad)'; b.style.color = 'var(--bad)';
+    note.style.display = 'block';
+    note.innerHTML = '<span class="bad">This deletes every saved trace and calibration in this browser and can\'t be undone. Copy your CSVs first.</span>';
+    setTimeout(() => { if (forgetArmed){ forgetArmed = false; b.textContent = 'Delete saved traces…'; b.style.borderColor=''; b.style.color=''; note.style.display='none'; } }, 6000);
+    return;
+  }
+  forgetArmed = false; b.textContent = 'Delete saved traces…'; b.style.borderColor=''; b.style.color=''; note.style.display='none';
+  try { localStorage.removeItem(KEY); } catch(e){}
+  S.imgs.forEach(im => { im.calib = null; im.seeds = []; ensureSeeds(im); });
+  if (S.cur >= 0) S.mode = 'calib';
+  renderAll(); toast('Saved traces deleted');
+};
+
+resize();
+})();
+</script>
+</body>
+</html>
